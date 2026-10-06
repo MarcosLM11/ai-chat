@@ -3,7 +3,6 @@
 6. Un conversationId por conversación. Ahora todos los usuarios comparten una sola memoria. Pásalo por cabecera o en la ruta y úsalo en .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id)).
 7. Memoria persistente. Usa JdbcChatMemoryRepository sobre el Postgres que ya tienes, para que las conversaciones sobrevivan a un reinicio.
 8. Streaming. Con .stream().content() y Flux<String> sirves la respuesta por SSE, como hace ChatGPT.
-9. Resumir la memoria. Cuando la ventana de 10 mensajes se llena, resume los antiguos en vez de descartarlos.
 
 3. Mejorar la calidad del RAG (lo más interesante para aprender)
 
