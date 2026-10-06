@@ -6,7 +6,6 @@ import java.util.List;
 import java.util.UUID;
 
 public record ChatRequest(
-        @NotBlank String conversationId,
         @NotBlank String message,
         List<@NotNull UUID> documentIds
 ) {}

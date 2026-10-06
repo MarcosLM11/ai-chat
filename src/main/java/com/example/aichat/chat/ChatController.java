@@ -3,19 +3,21 @@ package com.example.aichat.chat;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import java.util.UUID;
 
 @RestController
-@RequestMapping("api/v1/chat")
+@RequestMapping("api/v1/conversations")
 @RequiredArgsConstructor
 public class ChatController {
     private final ChatService service;
 
-    @PostMapping
-    public ResponseEntity<ChatAnswer> chat(@Valid @RequestBody ChatRequest request) {
-        return ResponseEntity.ok(service.chat(request));
+    @PostMapping("/{conversationId}/messages")
+    public ResponseEntity<ChatAnswer> chat(@PathVariable UUID conversationId, @Valid @RequestBody ChatRequest request) {
+        return ResponseEntity.ok(service.chat(conversationId, request));
     }
 }

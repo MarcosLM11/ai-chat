@@ -19,11 +19,11 @@ public class ChatService {
 
     private final ChatClient chatClient;
 
-    public ChatAnswer chat(ChatRequest request) {
+    public ChatAnswer chat(UUID conversationId, ChatRequest request) {
         var response = chatClient.prompt()
                 .user(request.message())
                 .advisors(advisor -> {
-                    advisor.param(ChatMemory.CONVERSATION_ID, request.conversationId());
+                    advisor.param(ChatMemory.CONVERSATION_ID, conversationId.toString());
                     if (request.documentIds() != null && !request.documentIds().isEmpty()) {
                         advisor.param(VectorStoreDocumentRetriever.FILTER_EXPRESSION, documentFilter(request.documentIds()));
                     }
