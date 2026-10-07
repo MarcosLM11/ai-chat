@@ -56,9 +56,9 @@ spring:
 app:
   rag:
     similarity-threshold: 0.3
-    top-k: 8
+    top-k: 10
   ingestion:
-    chunk-size: 500
+    chunk-size: 350
 
 logging:
   level:

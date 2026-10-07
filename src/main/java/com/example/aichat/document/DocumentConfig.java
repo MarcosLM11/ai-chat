@@ -20,7 +20,7 @@ public class DocumentConfig {
                 .withChunkSize(ingestionProperties.chunkSize())
                 .withMinChunkSizeChars(100)
                 .withMinChunkLengthToEmbed(5)
-                .withMaxNumChunks(1000)
+                .withMaxNumChunks(10000)
                 .withKeepSeparator(true)
                 .build();
     }
