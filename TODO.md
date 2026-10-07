@@ -37,5 +37,3 @@
     - Spring Modulith Event Publication Registry (spring-modulith-events-jpa). Guarda cada evento en una tabla hasta que el listener termina bien (patrón outbox) y vuelve a publicar los pendientes al arrancar (spring.modulith.events.republish-outstanding-events-on-restart). Mantiene el diseño actual casi sin cambios.
     Recomendación: Modulith encaja con el diseño actual. Si algún día hay varias instancias, la base de datos como cola.
 32. Reprocesar documentos en FAILED. Ahora hay que borrarlos y volver a subirlos, porque la deduplicación por SHA-256 bloquea la nueva subida. Se podría añadir POST /api/v1/documents/{id}/reprocess.
-33. Mensajes de error de la API. Spring Boot no incluye el reason de ResponseStatusException en la respuesta y el frontend muestra textos fijos según el código HTTP. Activar spring.mvc.problemdetails.enabled permitiría mostrar, por ejemplo, el id del documento duplicado.
-34. Límite de tamaño en un solo sitio. Los 40 MB están en application.yaml (spring.servlet.multipart.max-file-size) y repetidos en index.html (MAX_FILE_SIZE_BYTES). Se podría exponer el límite desde la API o servirlo junto a la página.

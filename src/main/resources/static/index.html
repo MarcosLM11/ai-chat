@@ -163,15 +163,11 @@
     const uploadStatus = document.getElementById('upload-status');
 
     const POLL_INTERVAL_MS = 2000;
-    const MAX_FILE_SIZE_BYTES = 40 * 1024 * 1024;
     const ACTIVE_STATUSES = new Set(['PENDING', 'PROCESSING']);
     const STATUS_LABELS = { PENDING: 'En cola', PROCESSING: 'Procesando', READY: 'Listo', FAILED: 'Error' };
-    const UPLOAD_ERRORS = {
-        400: 'El fichero está vacío',
-        409: 'Ese documento ya está subido',
-        413: 'El fichero es demasiado grande'
-    };
+    const FILE_TOO_LARGE = 'El fichero es demasiado grande';
     let pollTimer = null;
+    let maxFileSizeBytes = null;
     let loadFailed = false;
 
     let conversationId = loadConversationId();
@@ -253,7 +249,7 @@
                 headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
                 body: JSON.stringify({ message })
             });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) throw new Error(await errorMessage(response));
 
             for await (const { event, data } of readEvents(response)) {
                 if (event === 'sources') sources = data;
@@ -266,6 +262,14 @@
             assistant.classList.add('error');
             text.appendData(`${text.length ? '\n\n' : ''}⚠ ${error.message}`);
         }
+    }
+
+    async function errorMessage(response) {
+        try {
+            const problem = await response.json();
+            if (problem.detail) return problem.detail;
+        } catch {}
+        return `HTTP ${response.status}`;
     }
 
     function showUploadStatus(text, isError = false) {
@@ -314,11 +318,18 @@
         }
     }
 
+    async function loadUploadLimits() {
+        try {
+            const response = await fetch('/api/v1/documents/limits');
+            if (response.ok) maxFileSizeBytes = (await response.json()).maxFileSizeBytes;
+        } catch {}
+    }
+
     async function loadDocuments() {
         clearTimeout(pollTimer);
         try {
             const response = await fetch('/api/v1/documents');
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) throw new Error(await errorMessage(response));
             const documents = await response.json();
             renderDocuments(documents);
             if (loadFailed) {
@@ -340,7 +351,7 @@
         if (!confirm(`¿Borrar "${doc.name}"?`)) return;
         try {
             const response = await fetch(`/api/v1/documents/${doc.id}`, { method: 'DELETE' });
-            if (!response.ok && response.status !== 404) throw new Error(`HTTP ${response.status}`);
+            if (!response.ok && response.status !== 404) throw new Error(await errorMessage(response));
         } catch (error) {
             showUploadStatus(`No se pudo borrar: ${error.message}`, true);
         }
@@ -351,8 +362,8 @@
         event.preventDefault();
         const file = fileInput.files[0];
         if (!file) return;
-        if (file.size > MAX_FILE_SIZE_BYTES) {
-            showUploadStatus(UPLOAD_ERRORS[413], true);
+        if (maxFileSizeBytes !== null && file.size > maxFileSizeBytes) {
+            showUploadStatus(FILE_TOO_LARGE, true);
             return;
         }
         const body = new FormData();
@@ -362,7 +373,7 @@
         showUploadStatus(`Subiendo ${file.name}…`);
         try {
             const response = await fetch('/api/v1/documents', { method: 'POST', body });
-            if (!response.ok) throw new Error(UPLOAD_ERRORS[response.status] ?? `HTTP ${response.status}`);
+            if (!response.ok) throw new Error(await errorMessage(response));
             uploadForm.reset();
             showUploadStatus('');
         } catch (error) {
@@ -399,6 +410,7 @@
     });
 
     renderConversation();
+    loadUploadLimits();
     loadDocuments();
     input.focus();
 </script>

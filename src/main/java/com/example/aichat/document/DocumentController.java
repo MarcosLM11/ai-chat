@@ -1,6 +1,7 @@
 package com.example.aichat.document;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.servlet.autoconfigure.MultipartProperties;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
@@ -20,6 +21,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class DocumentController {
     private final DocumentService service;
+    private final MultipartProperties multipartProperties;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<DocumentResponse> upload(@RequestParam("file") MultipartFile file) {
@@ -31,6 +33,11 @@ public class DocumentController {
     @GetMapping
     public ResponseEntity<List<DocumentResponse>> findAll() {
         return ResponseEntity.ok(service.findAll());
+    }
+
+    @GetMapping("/limits")
+    public ResponseEntity<UploadLimits> limits() {
+        return ResponseEntity.ok(new UploadLimits(multipartProperties.getMaxFileSize().toBytes()));
     }
 
     @GetMapping("/{id}")
