@@ -4,58 +4,61 @@ server:
 spring:
   application:
     name: ai-chat
-
   mvc:
     async:
       request-timeout: 120s
-
   servlet:
     multipart:
       max-file-size: 40MB
       max-request-size: 80MB
-
   datasource:
     url: jdbc:postgresql://localhost:5432/ai-chat
     username: ${DB_USERNAME:admin}
     password: ${DB_PASSWORD:admin123}
-
   jpa:
     hibernate:
       ddl-auto: validate
     show-sql: false
-
   flyway:
     baseline-on-migrate: true
     baseline-version: 0
-
   task:
     execution:
       mode: force
-
   ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+      init:
+        pull-model-strategy: when_missing
+        timeout: 15m
+      chat:
+        model: granite4.2:8b
+        temperature: 0.3
+        num-ctx: 16384
+        think: false
+        keep-alive: 30m
+      embedding:
+        model: granite-embedding:278m
+        keep-alive: 30m
     chat:
       memory:
         repository:
           jdbc:
             initialize-schema: always
-    openai:
-      api-key: ${OPENAI_API_KEY}
-      chat:
-        model: gpt-4o-mini
-        temperature: 0.5
-      embedding:
-        model: text-embedding-3-small
     vectorstore:
       pgvector:
         initialize-schema: true
         index-type: HNSW
         distance-type: COSINE_DISTANCE
-        dimensions: 1536
+        table-name: vector_store_ollama
+        dimensions: 768
 
 app:
   rag:
     similarity-threshold: 0.3
     top-k: 5
+  ingestion:
+    chunk-size: 500
 
 logging:
   level:

@@ -36,7 +36,9 @@ public class DocumentService {
         var contentHash = sha256(data);
         var existingId = documentRepository.findIdByContentHash(contentHash);
         if (existingId.isPresent()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "The document was already uploaded with id %s".formatted(existingId.get()));
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "The document was already uploaded with id %s".formatted(existingId.get()));
         }
 
         var entity = DocumentEntity.builder()

@@ -1,6 +1,7 @@
 package com.example.aichat.document;
 
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.EnableAsync;
@@ -8,14 +9,15 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 @EnableAsync
 @Configuration
+@EnableConfigurationProperties(IngestionProperties.class)
 public class DocumentConfig {
     static final String INGESTION_EXECUTOR = "documentIngestionExecutor";
     private static final int INGESTION_CONCURRENCY = 2;
 
     @Bean
-    public TokenTextSplitter tokenTextSplitter() {
+    public TokenTextSplitter tokenTextSplitter(IngestionProperties ingestionProperties) {
         return TokenTextSplitter.builder()
-                .withChunkSize(500)
+                .withChunkSize(ingestionProperties.chunkSize())
                 .withMinChunkSizeChars(100)
                 .withMinChunkLengthToEmbed(5)
                 .withMaxNumChunks(1000)

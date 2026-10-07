@@ -35,11 +35,6 @@ public class DocumentController {
         return ResponseEntity.ok(service.findAll());
     }
 
-    @GetMapping("/limits")
-    public ResponseEntity<UploadLimits> limits() {
-        return ResponseEntity.ok(new UploadLimits(multipartProperties.getMaxFileSize().toBytes()));
-    }
-
     @GetMapping("/{id}")
     public ResponseEntity<DocumentResponse> findById(@PathVariable UUID id) {
         return ResponseEntity.ok(service.findById(id));
