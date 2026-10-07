@@ -1,9 +1,3 @@
-2. Conversación y memoria
-
-6. Un conversationId por conversación. Ahora todos los usuarios comparten una sola memoria. Pásalo por cabecera o en la ruta y úsalo en .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, id)).
-7. Memoria persistente. Usa JdbcChatMemoryRepository sobre el Postgres que ya tienes, para que las conversaciones sobrevivan a un reinicio.
-8. Streaming. Con .stream().content() y Flux<String> sirves la respuesta por SSE, como hace ChatGPT.
-
 3. Mejorar la calidad del RAG (lo más interesante para aprender)
 
 10. Reescribir la consulta. RewriteQueryTransformer y CompressionQueryTransformer convierten "¿y eso cuánto cuesta?" en una pregunta autónoma usando el historial.
@@ -29,10 +23,19 @@
 
 6. Producto y robustez
 
-24. Ingesta asíncrona. Con documentos grandes, sube y devuelve 202 Accepted con un estado (PROCESSING/READY/FAILED) usando @Async o virtual threads.
-25. Evitar duplicados. Calcula un hash SHA-256 del archivo y no reindexes si ya existe.
 26. Varios proveedores. Cambia entre OpenAI, Anthropic (Claude) y Ollama local por configuración y compara calidad y coste.
-27. Multimodal. Sube imágenes o PDFs escaneados y descríbelos con un modelo de visión antes de indexar.
-28. Frontend sencillo. Una página con streaming, lista de documentos y fuentes clicables.
-29. Seguridad multiusuario. Con Spring Security, cada usuario ve solo sus documentos (filtro por ownerId en los metadatos) y sus conversaciones.
-30. Tests de integración. Testcontainers con pgvector, más un modelo simulado para que los tests no consuman la API.
+27. Multimodal. Sube imágenes o PDFs escaneados y descríbelos con un modelo de visión antes de indexar. Ahora esos documentos acaban en FAILED con "No text could be extracted from the document".
+28. Frontend sencillo. Ya hay streaming, fuentes clicables y panel de documentos con subida, borrado y estado. Falta elegir en el chat qué documentos usar (documentIds) y permitir marcar solo los que están en READY.
+29. Seguridad multiusuario. Con Spring Security, cada usuario ve solo sus documentos (filtro por ownerId en los metadatos) y sus conversaciones. La restricción única documents_content_hash_key es global y debería pasar a ser (owner_id, content_hash).
+30. Tests de integración. Testcontainers con pgvector, más un modelo simulado para que los tests no consuman la API. Como mínimo: subir un duplicado devuelve 409, una ingesta correcta acaba en READY, un fallo acaba en FAILED sin chunks y borrar un documento mientras se procesa no deja chunks huérfanos.
+
+7. Ingesta asíncrona
+
+31. Recuperar documentos sin procesar tras un reinicio. La subida guarda el documento en PENDING y publica un DocumentUploadedEvent, que DocumentIngestionService procesa con @Async después del commit. La cola del executor vive en memoria, así que si la aplicación se para o se cae, los documentos en cola se quedan en PENDING para siempre y los que se estaban procesando se quedan en PROCESSING. La ingesta ya es idempotente (borra los chunks del documento antes de indexar), así que reprocesarlos no duplica nada. Opciones:
+    - Reencolar al arrancar. Un listener de ApplicationReadyEvent busca los documentos en PENDING o PROCESSING y vuelve a publicar el evento. Es lo más sencillo, pero solo funciona con una instancia: con varias, todas reencolarían los mismos documentos.
+    - Usar la base de datos como cola. Se eliminan el evento y @Async, y un @Scheduled reclama trabajo con SELECT ... WHERE status = 'PENDING' ... FOR UPDATE SKIP LOCKED. No se pierde nada al reiniciar y funciona con varias instancias. Los documentos en PROCESSING necesitan un timeout (por ejemplo, una columna processing_started_at) que los devuelva a PENDING.
+    - Spring Modulith Event Publication Registry (spring-modulith-events-jpa). Guarda cada evento en una tabla hasta que el listener termina bien (patrón outbox) y vuelve a publicar los pendientes al arrancar (spring.modulith.events.republish-outstanding-events-on-restart). Mantiene el diseño actual casi sin cambios.
+    Recomendación: Modulith encaja con el diseño actual. Si algún día hay varias instancias, la base de datos como cola.
+32. Reprocesar documentos en FAILED. Ahora hay que borrarlos y volver a subirlos, porque la deduplicación por SHA-256 bloquea la nueva subida. Se podría añadir POST /api/v1/documents/{id}/reprocess.
+33. Mensajes de error de la API. Spring Boot no incluye el reason de ResponseStatusException en la respuesta y el frontend muestra textos fijos según el código HTTP. Activar spring.mvc.problemdetails.enabled permitiría mostrar, por ejemplo, el id del documento duplicado.
+34. Límite de tamaño en un solo sitio. Los 40 MB están en application.yaml (spring.servlet.multipart.max-file-size) y repetidos en index.html (MAX_FILE_SIZE_BYTES). Se podría exponer el límite desde la API o servirlo junto a la página.

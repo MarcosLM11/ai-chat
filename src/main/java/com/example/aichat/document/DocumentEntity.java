@@ -2,6 +2,8 @@ package com.example.aichat.document;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -25,5 +27,13 @@ public class DocumentEntity {
     @Column(columnDefinition = "bytea")
     private byte[] data;
     private String contentType;
+    @Column(length = 64, unique = true)
+    private String contentHash;
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20, nullable = false)
+    private DocumentStatus status;
+    @Column(length = 1000)
+    private String errorMessage;
     private LocalDateTime uploadedAt;
+    private LocalDateTime finishedAt;
 }

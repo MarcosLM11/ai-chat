@@ -1,74 +1,100 @@
 package com.example.aichat.document;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.ai.reader.tika.TikaDocumentReader;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
-import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.ai.vectorstore.filter.FilterExpressionBuilder;
+import org.hibernate.exception.ConstraintViolationException;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class DocumentService {
-    private final TokenTextSplitter tokenSplitter;
-    private final VectorStore vectorStore;
-    private final DocumentRepository documentRepository;
+    private static final String CONTENT_HASH_CONSTRAINT = "documents_content_hash_key";
 
-    @Transactional
+    private final DocumentChunkStore chunkStore;
+    private final DocumentRepository documentRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final TransactionTemplate transactionTemplate;
+
     public DocumentResponse upload(MultipartFile file) {
-        var reader = new TikaDocumentReader(file.getResource());
-        var documents = reader.read();
+        if (file.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The file is empty");
+
+        var data = readBytes(file);
+        var contentHash = sha256(data);
+        var existingId = documentRepository.findIdByContentHash(contentHash);
+        if (existingId.isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The document was already uploaded with id %s".formatted(existingId.get()));
+        }
 
         var entity = DocumentEntity.builder()
                 .name(file.getOriginalFilename())
                 .contentType(file.getContentType())
-                .data(readBytes(file))
+                .data(data)
+                .contentHash(contentHash)
+                .status(DocumentStatus.PENDING)
                 .uploadedAt(LocalDateTime.now())
                 .build();
-        documentRepository.save(entity);
+        try {
+            transactionTemplate.executeWithoutResult(status -> {
+                documentRepository.saveAndFlush(entity);
+                eventPublisher.publishEvent(new DocumentUploadedEvent(entity.getId()));
+            });
+        } catch (DataIntegrityViolationException e) {
+            if (!isDuplicateContentHash(e)) throw e;
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "The document was already uploaded");
+        }
 
-        documents.forEach(document -> document.getMetadata().putAll(Map.of(
-                "documentId", entity.getId().toString(),
-                "fileName", Objects.requireNonNullElse(entity.getName(), "unknown"),
-                "contentType", Objects.requireNonNullElse(entity.getContentType(), "unknown"),
-                "uploadedAt", entity.getUploadedAt().toString()
-        )));
-
-        var chunks = tokenSplitter.apply(documents);
-        vectorStore.add(chunks);
-
-        return new DocumentResponse(entity.getId(), entity.getName(), entity.getContentType(), entity.getUploadedAt());
+        return DocumentResponse.from(entity);
     }
 
     @Transactional(readOnly = true)
     public List<DocumentResponse> findAll() {
-        return documentRepository.findAllSummaries();
+        return documentRepository.findSummariesByOrderByUploadedAtDesc();
+    }
+
+    @Transactional(readOnly = true)
+    public DocumentResponse findById(UUID id) {
+        return documentRepository.findSummaryById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
     }
 
     @Transactional
     public void delete(UUID id) {
-        if (!documentRepository.existsById(id)) {
+        if (documentRepository.deleteDocumentById(id) == 0) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found");
         }
-        var filter = new FilterExpressionBuilder();
-        vectorStore.delete(filter.eq("documentId", id.toString()).build());
-        documentRepository.deleteById(id);
+        chunkStore.deleteByDocumentId(id);
     }
 
     public DocumentEntity download(UUID id) {
         return documentRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Document not found"));
+    }
+
+    private boolean isDuplicateContentHash(DataIntegrityViolationException e) {
+        return e.getCause() instanceof ConstraintViolationException violation
+                && CONTENT_HASH_CONSTRAINT.equals(violation.getConstraintName());
+    }
+
+    private String sha256(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private byte[] readBytes(MultipartFile file) {

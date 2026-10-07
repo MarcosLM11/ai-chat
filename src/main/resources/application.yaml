@@ -21,8 +21,16 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show-sql: false
+
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 0
+
+  task:
+    execution:
+      mode: force
 
   ai:
     chat:

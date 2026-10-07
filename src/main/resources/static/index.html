@@ -12,6 +12,8 @@
             --border: #d8dee4;
             --user-bg: #f0f2f5;
             --accent: #0969da;
+            --success: #1a7f37;
+            --danger: #cf222e;
         }
         @media (prefers-color-scheme: dark) {
             :root {
@@ -21,6 +23,8 @@
                 --border: #30363d;
                 --user-bg: #161b22;
                 --accent: #58a6ff;
+                --success: #3fb950;
+                --danger: #f85149;
             }
         }
         * { box-sizing: border-box; }
@@ -61,10 +65,10 @@
             border-radius: 16px;
             background: var(--user-bg);
         }
-        .message.error { color: #cf222e; }
+        .message.error { color: var(--danger); }
         .sources { margin-top: 8px; font-size: 13px; color: var(--muted); white-space: normal; }
         .sources a { color: var(--accent); margin-right: 12px; }
-        form {
+        #form {
             display: flex;
             gap: 8px;
             padding: 16px 0;
@@ -91,6 +95,32 @@
         }
         button:disabled { opacity: .5; cursor: default; }
         header button { padding: 4px 10px; font-size: 13px; }
+        #documents { padding: 8px 0; border-bottom: 1px solid var(--border); }
+        #documents summary { cursor: pointer; font-size: 14px; color: var(--muted); }
+        #upload-form { display: flex; gap: 8px; align-items: center; margin: 12px 0 8px; }
+        #upload-form input { flex: 1; min-width: 0; font-size: 13px; }
+        #upload-form button { padding: 6px 12px; }
+        #upload-status { font-size: 13px; color: var(--muted); }
+        #upload-status.error { color: var(--danger); }
+        #document-list { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow-y: auto; }
+        #document-list li {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px 8px;
+            padding: 6px 0;
+            font-size: 14px;
+            border-top: 1px solid var(--border);
+        }
+        #document-list li:first-child { border-top: none; }
+        #document-list li button { padding: 2px 8px; font-size: 12px; }
+        .document-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
+        .document-error { flex-basis: 100%; font-size: 12px; color: var(--danger); }
+        .badge { font-size: 12px; padding: 0 8px; border: 1px solid currentColor; border-radius: 999px; white-space: nowrap; }
+        .badge.PENDING { color: var(--muted); }
+        .badge.PROCESSING { color: var(--accent); }
+        .badge.READY { color: var(--success); }
+        .badge.FAILED { color: var(--danger); }
     </style>
 </head>
 <body>
@@ -102,6 +132,15 @@
         </div>
         <button id="new-conversation" type="button">Nueva conversación</button>
     </header>
+    <details id="documents">
+        <summary>Documentos <span id="document-count"></span></summary>
+        <form id="upload-form">
+            <input id="file" type="file" required>
+            <button id="upload" type="submit">Subir</button>
+        </form>
+        <div id="upload-status"></div>
+        <ul id="document-list"></ul>
+    </details>
     <div id="messages"></div>
     <form id="form">
         <textarea id="input" rows="2" placeholder="Escribe un mensaje… (Enter para enviar, Shift+Enter para salto de línea)" required></textarea>
@@ -115,6 +154,25 @@
     const input = document.getElementById('input');
     const send = document.getElementById('send');
     const conversationLabel = document.getElementById('conversation');
+    const documentsPanel = document.getElementById('documents');
+    const documentCount = document.getElementById('document-count');
+    const documentList = document.getElementById('document-list');
+    const uploadForm = document.getElementById('upload-form');
+    const fileInput = document.getElementById('file');
+    const uploadButton = document.getElementById('upload');
+    const uploadStatus = document.getElementById('upload-status');
+
+    const POLL_INTERVAL_MS = 2000;
+    const MAX_FILE_SIZE_BYTES = 40 * 1024 * 1024;
+    const ACTIVE_STATUSES = new Set(['PENDING', 'PROCESSING']);
+    const STATUS_LABELS = { PENDING: 'En cola', PROCESSING: 'Procesando', READY: 'Listo', FAILED: 'Error' };
+    const UPLOAD_ERRORS = {
+        400: 'El fichero está vacío',
+        409: 'Ese documento ya está subido',
+        413: 'El fichero es demasiado grande'
+    };
+    let pollTimer = null;
+    let loadFailed = false;
 
     let conversationId = loadConversationId();
 
@@ -210,6 +268,111 @@
         }
     }
 
+    function showUploadStatus(text, isError = false) {
+        uploadStatus.textContent = text;
+        uploadStatus.classList.toggle('error', isError);
+    }
+
+    function renderDocuments(documents) {
+        documentCount.textContent = `(${documents.length})`;
+        documentList.replaceChildren(...documents.map(renderDocument));
+    }
+
+    function renderDocument(doc) {
+        const status = doc.status;
+        const item = document.createElement('li');
+
+        const name = document.createElement('a');
+        name.className = 'document-name';
+        name.textContent = doc.name;
+        name.title = doc.name;
+        name.href = `/api/v1/documents/${doc.id}/download`;
+
+        const badge = document.createElement('span');
+        badge.className = `badge ${status}`;
+        badge.textContent = STATUS_LABELS[status] ?? status;
+
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.textContent = 'Borrar';
+        remove.addEventListener('click', () => deleteDocument(doc));
+
+        item.append(name, badge, remove);
+
+        if (status === 'FAILED' && doc.errorMessage) {
+            const error = document.createElement('div');
+            error.className = 'document-error';
+            error.textContent = doc.errorMessage;
+            item.appendChild(error);
+        }
+        return item;
+    }
+
+    function schedulePoll() {
+        if (documentsPanel.open && !document.hidden) {
+            pollTimer = setTimeout(loadDocuments, POLL_INTERVAL_MS);
+        }
+    }
+
+    async function loadDocuments() {
+        clearTimeout(pollTimer);
+        try {
+            const response = await fetch('/api/v1/documents');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const documents = await response.json();
+            renderDocuments(documents);
+            if (loadFailed) {
+                loadFailed = false;
+                showUploadStatus('');
+            }
+            if (documents.some(doc => ACTIVE_STATUSES.has(doc.status))) schedulePoll();
+        } catch (error) {
+            loadFailed = true;
+            showUploadStatus(`No se pudieron cargar los documentos: ${error.message}`, true);
+            schedulePoll();
+        }
+    }
+
+    documentsPanel.addEventListener('toggle', () => documentsPanel.open ? loadDocuments() : clearTimeout(pollTimer));
+    document.addEventListener('visibilitychange', () => document.hidden ? clearTimeout(pollTimer) : loadDocuments());
+
+    async function deleteDocument(doc) {
+        if (!confirm(`¿Borrar "${doc.name}"?`)) return;
+        try {
+            const response = await fetch(`/api/v1/documents/${doc.id}`, { method: 'DELETE' });
+            if (!response.ok && response.status !== 404) throw new Error(`HTTP ${response.status}`);
+        } catch (error) {
+            showUploadStatus(`No se pudo borrar: ${error.message}`, true);
+        }
+        await loadDocuments();
+    }
+
+    uploadForm.addEventListener('submit', async event => {
+        event.preventDefault();
+        const file = fileInput.files[0];
+        if (!file) return;
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+            showUploadStatus(UPLOAD_ERRORS[413], true);
+            return;
+        }
+        const body = new FormData();
+        body.append('file', file);
+
+        uploadButton.disabled = true;
+        showUploadStatus(`Subiendo ${file.name}…`);
+        try {
+            const response = await fetch('/api/v1/documents', { method: 'POST', body });
+            if (!response.ok) throw new Error(UPLOAD_ERRORS[response.status] ?? `HTTP ${response.status}`);
+            uploadForm.reset();
+            showUploadStatus('');
+        } catch (error) {
+            showUploadStatus(error.message, true);
+        } finally {
+            uploadButton.disabled = false;
+        }
+        await loadDocuments();
+    });
+
     form.addEventListener('submit', async event => {
         event.preventDefault();
         const message = input.value.trim();
@@ -236,6 +399,7 @@
     });
 
     renderConversation();
+    loadDocuments();
     input.focus();
 </script>
 </body>
