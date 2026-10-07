@@ -18,6 +18,8 @@
     <properties>
         <java.version>27</java.version>
         <spring-ai.version>2.1.0-M1</spring-ai.version>
+        <test.groups></test.groups>
+        <test.excludedGroups>eval</test.excludedGroups>
     </properties>
 
     <dependencies>
@@ -121,6 +123,14 @@
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <groups>${test.groups}</groups>
+                    <excludedGroups>${test.excludedGroups}</excludedGroups>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <executions>
                     <execution>
@@ -157,6 +167,16 @@
             </plugin>
         </plugins>
     </build>
+    <profiles>
+        <profile>
+            <id>eval</id>
+            <properties>
+                <test.groups>eval</test.groups>
+                <test.excludedGroups></test.excludedGroups>
+            </properties>
+        </profile>
+    </profiles>
+
     <repositories>
         <repository>
             <id>spring-snapshots</id>
